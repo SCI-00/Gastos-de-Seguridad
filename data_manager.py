@@ -8,7 +8,7 @@ FILE_NAME = "gastos_operacion_seguridad.xlsx"
 # Columnas oficiales para la V2
 COLUMNS = [
     "Fecha", "Estado", "Municipio", "CEDIS", "Categoría", "Concepto", 
-    "Descripción", "Factura", "Cotización", "Monto", "Fecha_Registro"
+    "Descripción", "Proveedor", "Factura", "Cotización", "Monto", "Fecha_Registro"
 ]
 
 def initialize_data():
@@ -40,7 +40,7 @@ def load_data():
 def add_expense(data_dict):
     """
     Agrega un nuevo gasto.
-    Recibe un diccionario con: fecha, estado, municipio, cedis, categoria, concepto, descripcion, factura, cotizacion, monto.
+    Recibe un diccionario con: fecha, estado, municipio, cedis, categoria, concepto, descripcion, proveedor, factura, cotizacion, monto.
     """
     df = load_data()
     
@@ -56,12 +56,17 @@ def add_expense(data_dict):
     df.to_excel(FILE_NAME, index=False)
     return True
 
-def generate_excel_report():
+def generate_excel_report(df_filtered=None):
     """
     Genera un archivo Excel en memoria con pestañas separadas por categoría.
+    Permite recibir un DataFrame filtrado (si es None, carga todo).
     Retorna: Objeto BytesIO listo para descargar.
     """
-    df = load_data()
+    if df_filtered is None:
+        df = load_data()
+    else:
+        df = df_filtered
+
     output = io.BytesIO()
     
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -69,12 +74,13 @@ def generate_excel_report():
         df.to_excel(writer, sheet_name="General", index=False)
         
         # Hojas por Categoría
-        categorias = df["Categoría"].unique()
-        for cat in categorias:
-            # Limpiar nombre de pestaña (Excel no permite >31 chars o caracteres especiales)
-            safe_name = str(cat)[:30].replace("/", "-")
-            df_cat = df[df["Categoría"] == cat]
-            df_cat.to_excel(writer, sheet_name=safe_name, index=False)
+        if not df.empty:
+            categorias = df["Categoría"].unique()
+            for cat in categorias:
+                # Limpiar nombre de pestaña (Excel no permite >31 chars o caracteres especiales)
+                safe_name = str(cat)[:30].replace("/", "-")
+                df_cat = df[df["Categoría"] == cat]
+                df_cat.to_excel(writer, sheet_name=safe_name, index=False)
             
     output.seek(0)
     return output

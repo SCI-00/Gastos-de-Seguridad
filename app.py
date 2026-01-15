@@ -93,43 +93,97 @@ def main():
     menu = st.sidebar.radio("Ir a:", ["📊 Dashboard", "📝 Registrar Gasto", "📂 Reportes", "⚙️ Editar Registros"])
     
     st.sidebar.markdown("---")
-    st.sidebar.info("v2.0 - Edición Profesional")
+    st.sidebar.info("v2.1 - Edición Profesional")
+
+    # --- FILTROS GLOBALES (Solo aplican al Dashboard y Reportes) ---
+    st.sidebar.markdown("### 🔍 Filtros de Visualización")
+    
+    # Clonar datos para filtrar sin perder los originales
+    df_filtered = df.copy()
+    
+    # 1. Filtro de Fechas
+    st.sidebar.markdown("**Rango de Fechas:**")
+    today = date.today()
+    start_date = st.sidebar.date_input("Inicio", today.replace(day=1))
+    end_date = st.sidebar.date_input("Fin", today)
+    
+    # Aplicar filtro de fecha
+    if not df_filtered.empty:
+        df_filtered["Fecha"] = pd.to_datetime(df_filtered["Fecha"]).dt.date
+        df_filtered = df_filtered[(df_filtered["Fecha"] >= start_date) & (df_filtered["Fecha"] <= end_date)]
+
+    # 2. Filtro de CEDIS
+    cedis_options = df["CEDIS"].unique().tolist() if "CEDIS" in df.columns else []
+    selected_cedis = st.sidebar.multiselect("Filtrar por CEDIS", cedis_options)
+    if selected_cedis:
+        df_filtered = df_filtered[df_filtered["CEDIS"].isin(selected_cedis)]
+
+    # 3. Filtro de Categoría
+    cat_options = df["Categoría"].unique().tolist()
+    selected_cats = st.sidebar.multiselect("Filtrar por Categoría", cat_options)
+    if selected_cats:
+        df_filtered = df_filtered[df_filtered["Categoría"].isin(selected_cats)]
+
 
     # --- VISTA: DASHBOARD ---
     if menu == "📊 Dashboard":
         st.markdown("<div class='main-header'>Dashboard Financiero de Seguridad</div>", unsafe_allow_html=True)
-        st.write("") # Espacio
+        st.markdown(f"**Viendo datos del:** {start_date} al {end_date}")
         
-        if df.empty:
-            st.warning("No hay datos para mostrar. Ve a 'Registrar Gasto' para comenzar.")
+        if df_filtered.empty:
+            st.warning("No hay datos con los filtros seleccionados.")
             return
 
         # KPIs Superiores
-        total_gasto = df["Monto"].sum()
-        gasto_mes = df[pd.to_datetime(df["Fecha"]).dt.month == date.today().month]["Monto"].sum()
-        top_cat = df.groupby("Categoría")["Monto"].sum().idxmax()
+        total_gasto = df_filtered["Monto"].sum()
+        total_ops = len(df_filtered)
+        # Promedio por operación
+        avg_ticket = total_gasto / total_ops if total_ops > 0 else 0
         
         c1, c2, c3 = st.columns(3)
-        c1.metric("Gasto Total Histórico", f"${total_gasto:,.2f} MXN")
-        c2.metric("Gasto Este Mes", f"${gasto_mes:,.2f} MXN")
-        c3.metric("Categoría Más Costosa", top_cat)
+        c1.metric("Gasto Total (Filtrado)", f"${total_gasto:,.2f} MXN")
+        c2.metric("Total Operaciones", total_ops)
+        c3.metric("Ticket Promedio", f"${avg_ticket:,.2f} MXN")
         
         st.divider()
 
-        # Gráficos
+        # Gráficos Fila 1
         col_g1, col_g2 = st.columns(2)
         
         with col_g1:
             st.subheader("Distribución por Categoría")
-            fig_pie = px.pie(df, values='Monto', names='Categoría', hole=0.4, color_discrete_sequence=px.colors.qualitative.Set2)
+            fig_pie = px.pie(df_filtered, values='Monto', names='Categoría', hole=0.4, 
+                             color_discrete_sequence=px.colors.qualitative.Bold)
             st.plotly_chart(fig_pie, use_container_width=True)
             
         with col_g2:
-            st.subheader("Tendencia de Gastos")
-            # Agrupar por fecha
-            df_trend = df.groupby("Fecha")["Monto"].sum().reset_index()
-            fig_line = px.line(df_trend, x='Fecha', y='Monto', markers=True)
-            st.plotly_chart(fig_line, use_container_width=True)
+            st.subheader("Tendencia de Gastos (Tiempo)")
+            if not df_filtered.empty:
+                df_trend = df_filtered.groupby("Fecha")["Monto"].sum().reset_index()
+                fig_line = px.line(df_trend, x='Fecha', y='Monto', markers=True, 
+                                   line_shape="spline", color_discrete_sequence=["#1E3A8A"])
+                st.plotly_chart(fig_line, use_container_width=True)
+
+        # Gráficos Fila 2 (Nuevos)
+        st.divider()
+        col_g3, col_g4 = st.columns(2)
+
+        with col_g3:
+            st.subheader("🏆 Top 5 Proveedores")
+            if "Proveedor" in df_filtered.columns:
+                df_prov = df_filtered.groupby("Proveedor")["Monto"].sum().reset_index().sort_values("Monto", ascending=False).head(5)
+                fig_bar_prov = px.bar(df_prov, x="Monto", y="Proveedor", orientation='h', 
+                                      text_auto='.2s', color="Monto", color_continuous_scale="Viridis")
+                st.plotly_chart(fig_bar_prov, use_container_width=True)
+        
+        with col_g4:
+            st.subheader("Gastos por CEDIS")
+            if "CEDIS" in df_filtered.columns:
+                df_cedis = df_filtered.groupby("CEDIS")["Monto"].sum().reset_index().sort_values("Monto", ascending=False).head(10)
+                fig_bar_cedis = px.bar(df_cedis, x="CEDIS", y="Monto", text_auto='.2s', 
+                                       color="CEDIS", color_discrete_sequence=px.colors.qualitative.Pastel)
+                st.plotly_chart(fig_bar_cedis, use_container_width=True)
+
 
     # --- VISTA: REGISTRO ---
     elif menu == "📝 Registrar Gasto":
@@ -152,12 +206,23 @@ def main():
             with c4:
                 # Selección Inteligente
                 categoria_sel = st.selectbox("Categoría Principal", list(CAT_CONCEPT_MAP.keys()))
-                # Subcategoría dinámica basada en la selección anterior
+                
+                # Lógica para "Concepto" y "Otros"
                 conceptos_disponibles = CAT_CONCEPT_MAP[categoria_sel]
-                concepto_sel = st.selectbox("Concepto / Subcategoría", conceptos_disponibles)
+                concepto_pre = st.selectbox("Concepto / Subcategoría", conceptos_disponibles)
+                
+                # Si elige "Varios" u "Otros" en la subcategoría, permitir texto libre
+                # O si la categoría principal es "Otros"
+                concepto_final = concepto_pre
+                if categoria_sel == "Otros" or concepto_pre in ["Varios", "Otros"]:
+                    concepto_custom = st.text_input("Especificar Concepto (Escribe manual):")
+                    if concepto_custom:
+                        concepto_final = concepto_custom
+
             with c5:
-                # Descripción libre
-                descripcion = st.text_area("Descripción Detallada", height=108)
+                # Proveedor (Nuevo campo)
+                proveedor = st.text_input("Proveedor (Empresa / Persona)")
+                descripcion = st.text_area("Descripción Detallada", height=10) # Altura ajustada
 
             c6, c7, c8 = st.columns(3)
             with c6:
@@ -170,15 +235,16 @@ def main():
             submitted = st.form_submit_button("💾 Guardar Registro en Sistema")
             
             if submitted:
-                if monto > 0:
+                if monto > 0 and proveedor: # Validar Proveedor también
                     data = {
                         "Fecha": fecha,
                         "Estado": estado,
                         "Municipio": municipio,
                         "CEDIS": cedis,
                         "Categoría": categoria_sel,
-                        "Concepto": concepto_sel,
+                        "Concepto": concepto_final, # Usar el concepto dinámico
                         "Descripción": descripcion,
+                        "Proveedor": proveedor,
                         "Factura": factura,
                         "Cotización": cotizacion,
                         "Monto": monto
@@ -186,23 +252,26 @@ def main():
                     data_manager.add_expense(data)
                     st.success("✅ Gasto registrado exitosamente.")
                 else:
-                    st.error("⚠️ El monto debe ser mayor a 0.")
+                    st.error("⚠️ El monto y el Proveedor son obligatorios.")
+
 
     # --- VISTA: REPORTES ---
     elif menu == "📂 Reportes":
         st.header("Centro de Reportes")
-        st.write("Aquí puedes visualizar la base de datos completa y descargarla.")
+        st.info("💡 Los filtros de la barra lateral también aplican a este reporte.")
         
-        st.dataframe(df, use_container_width=True)
+        st.write(f"Mostrando {len(df_filtered)} registros filtrados.")
+        st.dataframe(df_filtered, use_container_width=True)
         
         st.write("---")
-        st.markdown("### 📥 Descargar Reporte Segmentado")
-        st.write("Este reporte generará un Excel con pestañas separadas por cada categoría.")
+        st.markdown("### 📥 Descargar Reporte Segmentado (Filtrado)")
+        st.write("Este reporte generará un Excel con los datos que ves en pantalla, separado por categorías.")
         
         if st.button("Generar Archivo Excel"):
-            excel_data = data_manager.generate_excel_report()
+            # Generar reporte usando los datos filtrados
+            excel_data = data_manager.generate_excel_report(df_filtered)
             st.download_button(
-                label="⬇️ Descargar Excel Segmentado",
+                label="⬇️ Descargar Excel Filtrado",
                 data=excel_data,
                 file_name=f"Reporte_Seguridad_{date.today()}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -211,17 +280,22 @@ def main():
     # --- VISTA: EDICIÓN ---
     elif menu == "⚙️ Editar Registros":
         st.header("🛠️ Administrador de Registros")
+        
+        # Nota: Aquí mostramos TODO (sin filtrar) para evitar borrar algo por error oculto, 
+        # o podríamos aplicar filtro si el usuario quiere.
+        # Por seguridad, dejemos que edite todo el dataset crudo.
+        
         st.info("""
-        **Instrucciones:**
-        1. **Editar:** Haz doble clic en cualquier celda para cambiar su valor.
-        2. **Borrar:** Selecciona las filas (casilla izquierda) y presiona la tecla `Supr` o `Del`.
-        3. **IMPORTANTE:** Al finalizar, dale clic al botón **"💾 Guardar Cambios"** para actualizar el Excel.
+        **Modo Edición Total:** Aquí se muestran TODOS los registros (sin filtros) para mantenimiento.
+        1. **Editar:** Haz doble clic en cualquier celda.
+        2. **Borrar:** Selecciona las filas y presiona `Supr`.
+        3. **Guardar:** Clic en "Guardar Cambios".
         """)
 
         # Editor de Datos
         edited_df = st.data_editor(
-            df,
-            num_rows="dynamic", # Permite añadir/borrar filas
+            df, # Usamos df completo, no filtrado
+            num_rows="dynamic",
             use_container_width=True,
             key="editor_gastos",
             column_config={
@@ -229,6 +303,7 @@ def main():
                 "Fecha": st.column_config.DateColumn(format="YYYY-MM-DD"),
             }
         )
+
 
         if st.button("💾 Guardar Cambios Realizados"):
             if data_manager.save_all_data(edited_df):
