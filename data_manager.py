@@ -70,7 +70,11 @@ def load_data():
             valid_cols = [c for c in df.columns if c in COLUMNS]
             return df[valid_cols]
         except Exception as e:
-            # Si falla (ej. tabla no existe, error de red), intentar local pero avisar
+            # Manejo específico para hoja vacía (primera vez)
+            if "No columns to parse" in str(e) or "empty" in str(e).lower():
+                return pd.DataFrame(columns=COLUMNS)
+            
+            # Si es otro error (red, auth), advertir y usar local
             st.warning(f"⚠️ No se pudo conectar a Google Sheets: {e}. Usando modo local temporal.")
     
     # 2. Modo Local (Fallback)
