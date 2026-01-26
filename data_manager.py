@@ -54,7 +54,7 @@ def load_data():
     if conn:
         try:
             # ttl=0 asegura que no cachee y siempre traiga datos frescos
-            df = conn.read(worksheet="Hoja 1", ttl=0)
+            df = conn.read(ttl=0)
             
             # Si la hoja está vacía o nueva, normalizar columnas
             if df.empty:
@@ -108,7 +108,7 @@ def add_expense(data_dict):
     # 1. Intentar guardar en Google Sheets
     if conn:
         try:
-            conn.update(worksheet="Hoja 1", data=df_updated)
+            conn.update(data=df_updated)
             return True
         except Exception as e:
             st.error(f"❌ Error guardando en Nube: {e}")
@@ -151,7 +151,7 @@ def save_all_data(df):
     
     if conn:
         try:
-            conn.update(worksheet="Hoja 1", data=df)
+            conn.update(data=df)
             return True
         except Exception as e:
             st.error(f"Error actualizando nube: {e}")
